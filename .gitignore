@@ -29,4 +29,4 @@ venv.bak
 .idea/
 *.swp
 
-backend/core/data/
+core/data/

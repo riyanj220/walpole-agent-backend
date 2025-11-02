@@ -1,6 +1,17 @@
 from django.urls import path
-from .views import ask
+from . import views
 
 urlpatterns = [
-    path("ask/", ask),
+    # Main query endpoint
+    path('ask/', views.ask, name='ask'),
+    
+    # Batch processing
+    path('batch/', views.batch_query, name='batch_query'),
+    
+    # Chapter information
+    path('chapter/<int:chapter_number>/', views.chapter_info, name='chapter_info'),
+    path('chapters/', views.list_chapters, name='list_chapters'),
+    
+    # System health
+    path('health/', views.system_health, name='health'),
 ]

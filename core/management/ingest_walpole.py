@@ -23,7 +23,8 @@ EXERCISE_SUBPART_RE = re.compile(r'^\(([a-z])\)\s+(.+)', re.IGNORECASE)
 
 # Answers section regex patterns
 ANSWERS_HEADING_RE = re.compile(
-    r"^Answers\s+to\s+Odd-Numbered", re.IGNORECASE
+    r"^\s*Answers\s+to\s+Odd[--]?Numbered\s*$",
+    re.IGNORECASE,
 )
 ANSWER_START_RE = re.compile(r"^(\d{1,3}\.\d{1,3})(?:\s|$|\s*\()")
 
@@ -329,11 +330,19 @@ def structured_chunking(pages, pages_info, patterns):
     exercises_detected = 0
     answers_detected = 0
 
+
     def flush():
+        # Flushes the current_text buffer into a new Document chunk.
         if not current_text:
             return
         text = "\n".join(current_text).strip()
         if text:
+            print("="*30)
+            print(f"📦 FLUSHING CHUNK")
+            print(f"  Type: {current_meta.get('type')}")
+            print(f"  Meta: {current_meta}")
+            print(f"  Preview: {text[:100]}...{text[-100:]}")
+            print("="*30)
             chunks.append(Document(page_content=text, metadata=current_meta.copy()))
         current_text.clear()
 
@@ -363,8 +372,14 @@ def structured_chunking(pages, pages_info, patterns):
             line = line_info["text"]
 
             # If we're inside Review Exercises section, skip all content until next Chapter
-            if skip_until_chapter and not CHAPTER_RE.match(line):
-                continue
+            if skip_until_chapter:
+                # ...only stop skipping if we find a Chapter OR an "unlock" phrase.
+                # If it's not one of these, continue skipping.
+                if (not CHAPTER_RE.match(line) and 
+                    not ANSWERS_HEADING_RE.match(line) and
+                    not BLANK_PAGE_RE.search(line) and 
+                    not MISCONCEPTIONS_RE.search(line)):
+                    continue
             
             # Get prev/next line info for context
             prev_line_info = lines_info[line_idx - 1] if line_idx > 0 else None
@@ -375,9 +390,10 @@ def structured_chunking(pages, pages_info, patterns):
                 print(f"Skipping Review Exercises starting at page {page_no}")
                 flush()
                 skip_until_chapter = True
+                allow_chapter_start = True
                 continue
 
-            # Still handle blank pages or misconceptions normally
+            # handle blank pages or misconceptions normally
             if BLANK_PAGE_RE.search(line) or MISCONCEPTIONS_RE.search(line):
                 flush()
                 current_text.append(line)
@@ -481,7 +497,7 @@ def structured_chunking(pages, pages_info, patterns):
             
             if mode in ("exercises_section", "exercise"):
                 # Match exercise number at start: "2.31" or "2.31 Some text"
-                match = re.match(r"^(\d{1,3}\.\d{1,3})\b", line)
+                match = EXERCISE_START_RE.match(line)
                 
                 if match:
                     new_ex_id = match.group(1)
@@ -504,6 +520,17 @@ def structured_chunking(pages, pages_info, patterns):
 
                     new_ex_num = parse_id(new_ex_id)
 
+                    # HAPTER CONTEXT CHECK  ---
+                    current_chapter = current_meta.get('chapter')
+                    if new_ex_num and current_chapter:
+                        new_ch, new_ex = new_ex_num
+                        # If the exercise's chapter (e.g., "47") doesn't match the current
+                        # document chapter (e.g., "18"), it's a reference. Skip it.
+                        if new_ch != current_chapter:
+                            print(f"  -> Skipping ref {new_ex_id} (Chapter mismatch: {new_ch} != {current_chapter})")
+                            current_text.append(line)
+                            continue 
+
                     # Validation: enforce monotonic increase
                     if last_exercise_num and new_ex_num:
                         prev_ch, prev_ex = last_exercise_num
@@ -516,13 +543,6 @@ def structured_chunking(pages, pages_info, patterns):
                                 print(f"Skipping ref {new_ex_id} (prev {last_exercise_num})")
                                 current_text.append(line)
                                 continue
-
-                    # Additional validation: Must have text after number OR next line is (a)
-                    rest_of_line = line[len(new_ex_id):].strip()
-                    if not rest_of_line and not starts_with_subpart:
-                        # Just a bare number with nothing after - likely a reference
-                        current_text.append(line)
-                        continue
 
                    # Guard: skip if numeric value looks like a decimal < 1 (probabilities, data)
                     try:
@@ -704,7 +724,7 @@ def ingest_pdf():
 
     # NEW: Define page ranges to exclude (e.g., bibliography, index)
     skip_ranges = [
-        (741, 789) 
+        (741, 788) 
     ]
     
     print(f"exclusionary filtering pages from ranges: {skip_ranges}...")

@@ -11,8 +11,8 @@ services:
       - 8000 # Internal port, not visible to the world
     env_file:
       - .env   # Load your .env file
-    depends_on:
-      - db     # Add this if you decide to add a Postgres database later
+    # depends_on:
+    #   - db     # Add this if you decide to add a Postgres database later
 
   # 2. The Nginx Webserver (Reverse Proxy)
   nginx:

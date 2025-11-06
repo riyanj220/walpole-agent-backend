@@ -125,7 +125,6 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
 from decouple import config
-OLLAMA_BASE_URL = config('OLLAMA_BASE_URL')
-
+GROQ_API_KEY = config('GROQ_API_KEY')
 
 

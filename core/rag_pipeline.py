@@ -4,7 +4,6 @@ Handles routing between agent mode and direct mode based on query complexity.
 """
 
 from .rag_agent import ask_agent, ask_direct
-from .rag_tools import smart_search
 import re
 
 
@@ -13,37 +12,30 @@ def detect_query_complexity(query: str) -> str:
     Determine if query needs agent reasoning or can be handled directly.
     
     Returns:
-        'simple' - Direct retrieval (exercise, answer, example by ID)
-        'complex' - Needs agent reasoning (multi-step, conceptual)
+        'direct' - All single-step queries (exercise, answer, theory explanations, how-to-solve)
+        'agent'  - True multi-step reasoning (compare, follow-up, etc.)
     """
     query_lower = query.lower()
     
-    # Simple patterns: Direct ID-based retrieval
-    simple_patterns = [
-        r'exercise\s+\d+\.\d+',
-        r'problem\s+\d+\.\d+',
-        r'question\s+\d+\.\d+',
-        r'answer.*?\d+\.\d+',
-        r'solution.*?\d+\.\d+',
-        r'example\s+\d+(?:\.\d+)*'
+    solve_patterns = [
+        r'how to solve', 'explain exercise', 'step by step', 'steps to solve',
+        r'solve.*?\d+\.\d+', r'explain.*?\d+\.\d+'
     ]
-    
-    for pattern in simple_patterns:
-        if re.search(pattern, query_lower):
-            return 'simple'
-    
-    # Complex patterns: Need reasoning
-    complex_indicators = [
-        'explain', 'how', 'why', 'compare', 'difference',
-        'relationship', 'derive', 'prove', 'show that',
-        'step by step', 'detail', 'understand'
+    if any(re.search(pattern, query_lower) for pattern in solve_patterns):
+        print("[Pipeline] Detected 'how-to-solve' query -> Routing to DIRECT")
+        return 'direct'
+
+    agent_indicators = [
+        'compare', 'difference between', 'relationship between',
+        ' and ', ' vs ', ' versus '
     ]
-    
-    if any(indicator in query_lower for indicator in complex_indicators):
-        return 'complex'
-    
-    # Default to complex for safety
-    return 'complex'
+
+    if any(indicator in query_lower for indicator in agent_indicators):
+        print("[Pipeline] Detected 'multi-step' query -> Routing to AGENT")
+        return 'agent'
+        
+    print("[Pipeline] Detected 'single-step' query -> Routing to DIRECT")
+    return 'direct'
 
 
 def ask_pipeline(query: str, params: dict = None) -> dict:
@@ -72,8 +64,8 @@ def ask_pipeline(query: str, params: dict = None) -> dict:
     if forced_mode:
         mode = forced_mode
     else:
-        complexity = detect_query_complexity(query)
-        mode = 'direct' if complexity == 'simple' else 'agent'
+        # Use our updated detection logic
+        mode = detect_query_complexity(query)
     
     print(f"[Pipeline] Mode: {mode} | Chapter: {chapter} | Query: {query[:50]}...")
     

@@ -8,5 +8,5 @@ faiss-cpu>=1.8.0
 pymupdf>=1.24.9 
 pypdf>=5.0.0
 sympy>=1.13
-langchain-ollama
 python-decouple==3.8
+langchain-groq

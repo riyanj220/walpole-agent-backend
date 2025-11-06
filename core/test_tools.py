@@ -1,259 +1,139 @@
 """
-Direct testing of RAG tools without API layer.
-Run this to verify your tools work correctly.
+Diagnostic script to test your RAG system.
+Run this to identify issues before deploying.
 """
 
-# # Add your Django project to path if needed
-# import sys
-# import os
-# import django
-
-# # Setup Django environment
-# os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'your_project.settings')
-# django.setup()
-
-# Now import your tools
-from core.rag_tools import (
-    get_exercise,
-    get_answer,
-    get_examples,
-    get_theory_concepts,
-    explain_with_context,
-    smart_search
-)
-from core.rag_runtime import vectorstore
-
-
-def print_section(title):
-    """Pretty print section headers"""
-    print("\n" + "="*70)
-    print(f"  {title}")
-    print("="*70 + "\n")
-
+from . import rag_runtime
+from . import rag_tools 
+from . import rag_agent
 
 def test_vectorstore():
-    """Test if vectorstore is loaded correctly"""
-    print_section("TEST 1: Vectorstore Status")
+    """Test 1: Check vectorstore is loaded correctly"""
+    print("\n" + "="*60)
+    print("TEST 1: VECTORSTORE HEALTH CHECK")
+    print("="*60)
     
-    try:
-        total_docs = len(vectorstore.docstore._dict)
-        print(f"✅ Vectorstore loaded successfully!")
-        print(f"📊 Total documents: {total_docs}")
-        
-        # Count by type
-        type_counts = {}
-        for doc in vectorstore.docstore._dict.values():
-            doc_type = doc.metadata.get('type', 'unknown')
-            type_counts[doc_type] = type_counts.get(doc_type, 0) + 1
-        
-        print("\n📚 Document breakdown:")
-        for doc_type, count in sorted(type_counts.items()):
-            print(f"   - {doc_type}: {count}")
-        
-        return True
-    except Exception as e:
-        print(f"❌ Error loading vectorstore: {e}")
-        return False
+    stats = rag_runtime.get_stats()
+    print(f"✓ Total documents: {stats['total_documents']}")
+    print(f"✓ Document types: {stats['by_type']}")
+    print(f"✓ Chapter count: {len(stats['by_chapter'])} chapters")
+    print(f"✓ Sample exercise IDs: {stats['sample_exercise_ids'][:5]}")
+    print(f"✓ Sample answer IDs: {stats['sample_answer_ids'][:5]}")
+    
+    return stats
 
 
-def test_get_exercise():
-    """Test exercise retrieval"""
-    print_section("TEST 2: Get Exercise")
+def test_specific_exercises():
+    """Test 2: Check if specific exercises exist"""
+    print("\n" + "="*60)
+    print("TEST 2: SPECIFIC EXERCISE LOOKUP")
+    print("="*60)
     
-    # Try a few exercise IDs
-    test_ids = ["1.1", "2.5", "6.14"]
+    test_ids = ["6.13", "6.14", "1.1", "2.5"]
     
     for ex_id in test_ids:
-        print(f"🔍 Searching for Exercise {ex_id}...")
-        docs = get_exercise(ex_id)
+        result = rag_runtime.check_exercise_exists(ex_id)
+        status = "✓ FOUND" if result['found'] else "✗ NOT FOUND"
+        print(f"{status} - Exercise {ex_id}: {result['count']} chunks")
         
-        if docs:
-            print(f"✅ Found {len(docs)} chunk(s)")
-            print(f"📄 Preview: {docs[0].page_content[:150]}...")
-            print(f"📌 Metadata: {docs[0].metadata}")
-        else:
-            print(f"❌ Exercise {ex_id} not found")
-        print()
+        if result['found']:
+            print(f"    Metadata: {result['metadata'][0]}")
 
 
-def test_get_answer():
-    """Test answer retrieval"""
-    print_section("TEST 3: Get Answer")
+def test_specific_answers():
+    """Test 3: Check if answers exist"""
+    print("\n" + "="*60)
+    print("TEST 3: SPECIFIC ANSWER LOOKUP")
+    print("="*60)
     
-    # Test with odd-numbered exercises (answers are only for odd)
-    test_ids = ["1.1", "1.3", "2.1"]
+    test_ids = ["6.13", "6.14", "1.1", "2.5"]
     
     for ex_id in test_ids:
-        print(f"🔍 Searching for Answer to {ex_id}...")
-        docs = get_answer(ex_id)
+        result = rag_runtime.check_answer_exists(ex_id)
+        status = "✓ FOUND" if result['found'] else "✗ NOT FOUND"
+        print(f"{status} - Answer {ex_id}: {result['count']} chunks")
         
-        if docs:
-            print(f"✅ Found {len(docs)} answer chunk(s)")
-            print(f"📄 Preview: {docs[0].page_content[:150]}...")
-            print(f"📌 Metadata: {docs[0].metadata}")
-        else:
-            print(f"❌ Answer to {ex_id} not found")
-        print()
+        if result['found']:
+            print(f"    Metadata: {result['metadata'][0]}")
 
 
-def test_get_examples():
-    """Test example retrieval"""
-    print_section("TEST 4: Get Examples")
+def test_retrieval_functions():
+    """Test 4: Test retrieval functions"""
+    print("\n" + "="*60)
+    print("TEST 4: RETRIEVAL FUNCTION TESTS")
+    print("="*60)
     
-    # Test specific example
-    print("🔍 Searching for Example 1.1...")
-    docs = get_examples(example_id="1.1")
-    
+    # Test exercise retrieval
+    print("\n4a) Getting exercise 6.13:")
+    docs = rag_tools.get_exercise("6.13")
     if docs:
-        print(f"✅ Found {len(docs)} example chunk(s)")
-        print(f"📄 Preview: {docs[0].page_content[:150]}...")
-        print(f"📌 Metadata: {docs[0].metadata}")
+        print(f"✓ Found {len(docs)} chunks")
+        print(f"  Preview: {docs[0].page_content[:150]}...")
     else:
-        print("❌ Example 1.1 not found")
+        print("✗ Not found")
     
-    print("\n" + "-"*70 + "\n")
-    
-    # Test chapter examples
-    print("🔍 Getting all examples from Chapter 1...")
-    docs = get_examples(chapter=1, limit=3)
-    
+    # Test answer retrieval
+    print("\n4b) Getting answer 6.13:")
+    docs = rag_tools.get_answer("6.13")
     if docs:
-        print(f"✅ Found {len(docs)} examples in Chapter 1")
-        for i, doc in enumerate(docs, 1):
-            ex_id = doc.metadata.get('example_id', 'unknown')
-            print(f"   {i}. Example {ex_id}")
+        print(f"✓ Found {len(docs)} chunks")
+        print(f"  Preview: {docs[0].page_content[:150]}...")
     else:
-        print("❌ No examples found in Chapter 1")
-
-
-def test_get_theory():
-    """Test theory/conceptual retrieval"""
-    print_section("TEST 5: Get Theory Concepts")
+        print("✗ Not found")
     
-    queries = [
-        "variance",
-        "probability distribution",
-        "Bayes theorem"
-    ]
-    
-    for query in queries:
-        print(f"🔍 Searching for: '{query}'")
-        docs = get_theory_concepts(query, limit=3)
-        
-        if docs:
-            print(f"✅ Found {len(docs)} relevant chunks")
-            print(f"📄 Top result preview: {docs[0].page_content[:120]}...")
-            print(f"📌 Chapter: {docs[0].metadata.get('chapter', 'unknown')}")
-        else:
-            print(f"❌ No theory found for '{query}'")
-        print()
+    # Test theory search
+    print("\n4c) Searching theory for 'normal distribution':")
+    docs = rag_tools.get_theory_concepts("normal distribution", chapter=6)
+    if docs:
+        print(f"✓ Found {len(docs)} chunks")
+        print(f"  Preview: {docs[0].page_content[:150]}...")
+    else:
+        print("✗ Not found")
 
 
-def test_smart_search():
-    """Test smart search functionality"""
-    print_section("TEST 6: Smart Search")
+def test_direct_mode():
+    """Test 5: Test direct mode queries"""
+    print("\n" + "="*60)
+    print("TEST 5: DIRECT MODE QUERIES")
+    print("="*60)
     
     test_queries = [
-        "exercise 1.1",
-        "answer to 1.3",
-        "example 2.1",
-        "what is variance"
+        ("What is exercise 6.13?", None),
+        ("Solve exercise 6.13", None),
+        ("What is the answer to 6.13?", None),
+        ("Explain normal distribution", 6)
     ]
     
-    for query in test_queries:
-        print(f"🔍 Query: '{query}'")
-        result = smart_search(query)
-        
-        print(f"   Type detected: {result['type']}")
-        print(f"   Results found: {len(result['results'])}")
-        if result['results']:
-            print(f"   Preview: {result['formatted_text'][:100]}...")
-        print()
-
-
-def test_explain_with_context():
-    """Test explain with context (uses LLM)"""
-    print_section("TEST 7: Explain with Context (LLM)")
-    
-    print("⚠️  This test uses the LLM and may take a few seconds...")
-    print()
-    
-    query = "What is variance and how is it used?"
-    print(f"🔍 Query: '{query}'")
-    print("\n⏳ Generating explanation...")
-    
-    try:
-        explanation = explain_with_context(query, chapter=3)
-        print("\n✅ Explanation generated:")
-        print("-" * 70)
-        print(explanation)
-        print("-" * 70)
-    except Exception as e:
-        print(f"\n❌ Error generating explanation: {e}")
-
-
-def test_chapter_coverage():
-    """Test what chapters are available"""
-    print_section("TEST 8: Chapter Coverage")
-    
-    chapters = set()
-    for doc in vectorstore.docstore._dict.values():
-        chapter = doc.metadata.get('chapter')
-        if chapter:
-            chapters.add(chapter)
-    
-    chapters_list = sorted(list(chapters))
-    print(f"📚 Available chapters: {len(chapters_list)}")
-    print(f"   Chapters: {chapters_list}")
-    
-    # Test a specific chapter
-    test_chapter = chapters_list[0] if chapters_list else 1
-    print(f"\n🔍 Analyzing Chapter {test_chapter}...")
-    
-    chapter_docs = [
-        d for d in vectorstore.docstore._dict.values()
-        if d.metadata.get('chapter') == test_chapter
-    ]
-    
-    type_counts = {}
-    for doc in chapter_docs:
-        doc_type = doc.metadata.get('type', 'unknown')
-        type_counts[doc_type] = type_counts.get(doc_type, 0) + 1
-    
-    print(f"   Total chunks: {len(chapter_docs)}")
-    print(f"   Breakdown:")
-    for doc_type, count in sorted(type_counts.items()):
-        print(f"      - {doc_type}: {count}")
+    for query, chapter in test_queries:
+        print(f"\n5.{test_queries.index((query, chapter)) + 1}) Query: '{query}'")
+        result = rag_agent.ask_direct(query, chapter)
+        print(f"Type: {result.get('type')}")
+        print(f"Success: {result['metadata'].get('success')}")
+        print(f"Results: {result['metadata'].get('num_results')}")
+        print(f"Answer preview: {result['answer'][:200]}...")
 
 
 def run_all_tests():
-    """Run all tests"""
-    print("\n" + "🚀 "*20)
-    print("Starting RAG Tools Direct Testing")
-    print("🚀 "*20)
+    """Run all diagnostic tests"""
+    print("\n" + "="*60)
+    print("WALPOLE RAG SYSTEM DIAGNOSTICS")
+    print("="*60)
     
-    # Test 1: Vectorstore
-    if not test_vectorstore():
-        print("\n❌ Vectorstore failed to load. Cannot continue tests.")
-        return
-    
-    # Test 2-8: Individual tools
-    test_get_exercise()
-    test_get_answer()
-    test_get_examples()
-    test_get_theory()
-    test_smart_search()
-    test_chapter_coverage()
-    
-    # Test 7: LLM test (optional, takes time)
-    print("\n" + "="*70)
-    response = input("Do you want to test LLM explanation? (y/n): ")
-    if response.lower() == 'y':
-        test_explain_with_context()
-    
-    print("\n" + "="*70)
-    print("✅ All tests completed!")
-    print("="*70 + "\n")
+    try:
+        test_vectorstore()
+        test_specific_exercises()
+        test_specific_answers()
+        test_retrieval_functions()
+        test_direct_mode()
+        
+        print("\n" + "="*60)
+        print("✓ ALL TESTS COMPLETED")
+        print("="*60)
+        
+    except Exception as e:
+        print(f"\n✗ TEST FAILED: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":

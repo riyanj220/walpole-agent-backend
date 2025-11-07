@@ -1,0 +1,40 @@
+# This is the name of your new automated workflow
+name: Deploy to DigitalOcean Droplet
+
+# This tells GitHub WHEN to run this automation.
+# We'll run it on every push to the "main" branch.
+on:
+  push:
+    branches:
+      - main
+
+# This defines the "job" that will run.
+jobs:
+  deploy:
+    # This job will run on a fresh, temporary Ubuntu server
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out your code
+      # This pulls your new code (that you just pushed) onto the temporary server
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: SSH into your server and run the deployment commands
+      # This is the "magic" part. It uses a pre-made Action.
+      - name: SSH and Deploy
+        uses: appleboy/ssh-action@master
+        with:
+          # These pull the secrets we just saved in Step 1
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USERNAME }}
+          password: ${{ secrets.DEPLOY_PASSWORD }}
+
+          # This is the list of commands to run on your droplet
+          # It's the exact same manual process, but now automated!
+          script: |
+            cd ~/walpole-agent-backend
+            git pull origin main
+            docker-compose build
+            docker-compose up -d
+            docker image prune -f

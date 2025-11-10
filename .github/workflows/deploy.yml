@@ -34,8 +34,14 @@ jobs:
           # It's the exact same manual process, but now automated!
           script: |
             cd ~/walpole-agent-backend
-            git pull origin main
+
+            git fetch --all
+            git reset --hard origin/main
+            git clean -fd
+
+            # Rebuild fresh containers
             docker-compose down
-            docker-compose build --no-cache
-            docker-compose up -d --force-recreate
+            docker-compose build
+            docker-compose up -d 
+
             docker image prune -f

@@ -38,16 +38,20 @@ jobs:
             # Pull latest code and remove everything old
             git fetch --all
             git reset --hard origin/main
-            git clean -fdx  # <-- extra x removes ignored files too (like old build artifacts)
+            git clean -fdx
 
-            # Stop and remove old containers, images, and networks completely
-            docker compose down --rmi all --volumes --remove-orphans
+            # Stop and remove old containers
+            docker-compose down -v --remove-orphans
+
+            # Remove old images manually
+            docker-compose rm -f
+            docker rmi $(docker images -q walpole-agent-backend*) 2>/dev/null || true
 
             # Build everything from zero (no cache)
-            docker compose build --no-cache
+            docker-compose build --no-cache
 
             # Start fresh containers
-            docker compose up -d
+            docker-compose up -d
 
             # Clean up dangling images
             docker image prune -f

@@ -39,22 +39,19 @@ jobs:
             git fetch --all
             git reset --hard origin/main
 
-            # Clean the directory BUT exclude core/data
-            # We don't need to exclude .env anymore because we create it *after* this
+            git lfs pull
+
             git clean -fdx -e core/data/
 
-            # --- THIS IS THE NEW STEP ---
             # Create the .env file from our GitHub Secret
             echo "${{ secrets.DOT_ENV }}" > .env
 
-            # Stop and remove old containers
-            docker-compose down --rmi all -v --remove-orphans
+            docker-compose down -v --remove-orphans
 
-            # Build everything from zero
-            docker-compose build --no-cache
+            docker-compose build
 
-            # Start fresh containers
+            # 3. Start fresh containers
+            # This will use the newly built images
             docker-compose up -d
 
-            # Clean up dangling images
             docker image prune -f

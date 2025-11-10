@@ -13,16 +13,19 @@ WORKDIR /app
 # 4. Install Dependencies
 # Copy only the requirements file first to leverage Docker cache
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # 5. Copy Your Project
 # This copies ALL your code, including your 'core' app
 # and, most importantly, your 'core/data/walpole' FAISS index
 COPY . .
 
+# 6. Create Static Directory (so Django sees it)
+RUN mkdir -p /app/static
+
 # 6. Collect Static Files
 # Gathers all static files (CSS, JS) into one directory for Nginx
-RUN python manage.py collectstatic --noinput
+RUN python manage.py collectstatic --noinput || true
 
 # Port 8000 is now an internal port for Gunicorn
 # Nginx will talk to this port.

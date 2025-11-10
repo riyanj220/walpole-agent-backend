@@ -35,19 +35,22 @@ jobs:
           script: |
             cd ~/walpole-agent-backend
 
-            # Pull latest code and remove everything old
+            # Pull latest code
             git fetch --all
             git reset --hard origin/main
-            git clean -fdx
+
+            # Clean the directory BUT exclude core/data
+            # We don't need to exclude .env anymore because we create it *after* this
+            git clean -fdx -e core/data/
+
+            # --- THIS IS THE NEW STEP ---
+            # Create the .env file from our GitHub Secret
+            echo "${{ secrets.DOT_ENV }}" > .env
 
             # Stop and remove old containers
-            docker-compose down -v --remove-orphans
+            docker-compose down --rmi all -v --remove-orphans
 
-            # Remove old images manually
-            docker-compose rm -f
-            docker rmi $(docker images -q walpole-agent-backend*) 2>/dev/null || true
-
-            # Build everything from zero (no cache)
+            # Build everything from zero
             docker-compose build --no-cache
 
             # Start fresh containers

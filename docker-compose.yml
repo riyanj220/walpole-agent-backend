@@ -5,8 +5,8 @@ services:
   web:
     build: .  # Build from the Dockerfile in this directory
     command: gunicorn backend.wsgi:application --bind 0.0.0.0:8000 # <-- IMPORTANT: Change 'your_project_name'
-    volumes:
-      - static_volume:/app/static # Share static files with Nginx
+    # volumes:
+    #   - static_volume:/app/static # Share static files with Nginx
     expose:
       - 8000 # Internal port, not visible to the world
     env_file:
@@ -21,9 +21,9 @@ services:
       - "80:80"   # This exposes your app to the world on Port 80
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro # Read-only Nginx config
-      - static_volume:/app/static:ro      # Read-only static files
+      # - static_volume:/app/static:ro      # Read-only static files
     depends_on:
       - web
 
-volumes:
-  static_volume: # This volume is shared between 'web' and 'nginx'
+# volumes:
+#   static_volume: # This volume is shared between 'web' and 'nginx'

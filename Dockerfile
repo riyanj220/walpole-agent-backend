@@ -21,11 +21,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # 6. Create Static Directory (so Django sees it)
-RUN mkdir -p /app/static
+# RUN mkdir -p /app/static
 
 # 6. Collect Static Files
 # Gathers all static files (CSS, JS) into one directory for Nginx
-RUN python manage.py collectstatic --noinput || true
+# RUN python manage.py collectstatic --noinput || true
 
 # Port 8000 is now an internal port for Gunicorn
 # Nginx will talk to this port.

@@ -4,7 +4,7 @@ services:
   # 1. Your Django App Service
   web:
     build: .  # Build from the Dockerfile in this directory
-    command: gunicorn backend.wsgi:application --bind 0.0.0.0:8000 # <-- IMPORTANT: Change 'your_project_name'
+    command: gunicorn backend.wsgi:application --bind 0.0.0.0:8000 --workers 5 --threads 2 --timeout 120 # <-- IMPORTANT: Change 'your_project_name'
     # volumes:
     #   - static_volume:/app/static # Share static files with Nginx
     expose:

@@ -35,10 +35,19 @@ jobs:
           script: |
             cd ~/walpole-agent-backend
 
+            # Pull latest code and remove everything old
             git fetch --all
             git reset --hard origin/main
-            git clean -fd
+            git clean -fdx  # <-- extra x removes ignored files too (like old build artifacts)
 
-            docker-compose up -d --build
+            # Stop and remove old containers, images, and networks completely
+            docker compose down --rmi all --volumes --remove-orphans
 
+            # Build everything from zero (no cache)
+            docker compose build --no-cache
+
+            # Start fresh containers
+            docker compose up -d
+
+            # Clean up dangling images
             docker image prune -f

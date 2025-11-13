@@ -30,8 +30,6 @@ jobs:
           username: ${{ secrets.DEPLOY_USERNAME }}
           password: ${{ secrets.DEPLOY_PASSWORD }}
 
-          # This is the list of commands to run on your droplet
-          # It's the exact same manual process, but now automated!
           script: |
             cd ~/walpole-agent-backend
 

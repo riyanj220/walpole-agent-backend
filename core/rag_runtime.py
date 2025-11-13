@@ -103,6 +103,40 @@ def run_rag(query: str, docs: list):
         return f"Error generating response: {str(e)}"
 
 
+def run_general_chat(query: str):
+    """
+    Handle casual conversation, study tips, and emotional support.
+    Does NOT use the vector database.
+    """
+    # A specific prompt for being a friendly companion
+    general_prompt = ChatPromptTemplate.from_template("""
+    You are 'Stats Advisor', a cheerful, empathetic, and encouraging study companion for a Probability & Statistics student.
+    
+    YOUR PERSONALITY:
+    - You are friendly, warm, and slightly enthusiastic.
+    - You understand that statistics can be hard and stressful.
+    - You offer good general study advice (like taking breaks, practicing problems).
+    
+    YOUR TASK:
+    - Reply to the student's casual comment or question.
+    - If they are stressed, validate their feelings and offer encouragement.
+    - If they say hello, welcome them warmly.
+    - DO NOT try to explain complex math concepts in this mode (unless they specifically asked).
+    - Keep the response concise (2-3 sentences).
+
+    Student: {question}
+    
+    Your Friendly Response:
+    """)
+
+    try:
+        chain = general_prompt | llm | StrOutputParser()
+        response = chain.invoke({"question": query})
+        return response
+    except Exception as e:
+        print(f"[GENERAL CHAT ERROR] {str(e)}")
+        return "I'm here to help you study! Let's take a deep breath and tackle some statistics."
+
 # =====================================================
 #  Diagnostic Functions
 # =====================================================

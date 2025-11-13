@@ -115,7 +115,7 @@ tools = [
         description=(
             "Use this to search for theoretical concepts, definitions, or explanations. "
             "Input should be the concept or topic (e.g., 'variance', 'Bayes theorem'). "
-            "Returns relevant theory sections from the textbook."
+            "This tool returns a COMPLETE, FINAL ANSWER. You should output this answer directly."
         )
     )
 ]
@@ -137,10 +137,11 @@ IMPORTANT RULES:
 3. For examples → Use GetExample with just the number (e.g., "5.3")
 4. For concepts/theory → Use SearchTheory with the concept name
 5. ALWAYS use tools - do NOT try to answer from memory.
-6. **After you have gathered all the information you need using the available tools, you MUST stop calling tools and provide a "Final Answer".**
-7. **DO NOT invent new tool names.** Only use the tools provided: {tool_names}.
-8. If a tool returns "ERROR:", try a different approach or inform the user.
-9. Keep your final answer concise and based ONLY on tool results.
+6. **SPECIAL RULE: The 'SearchTheory' tool provides a complete answer. After you use 'SearchTheory', your next step MUST be to output a 'Final Answer' with the text from the 'Observation'. Do not loop.**
+7. **After you have gathered all the information you need using other tools, you MUST stop calling tools and provide a "Final Answer".**
+8. **DO NOT invent new tool names.** Only use the tools provided: {tool_names}.
+9. If a tool returns "ERROR:", try a different approach or inform the user.
+10. Keep your final answer concise and based ONLY on tool results.
 
 FORMAT TO FOLLOW:
 Question: the input question
@@ -230,102 +231,98 @@ def ask_agent(query: str, chapter: int = None) -> dict:
 def ask_direct(query: str, chapter: int = None) -> dict:
     """
     Direct retrieval without agent reasoning.
-    Much faster for simple ID-based queries.
+    Optimized for Exercise/Answer retrieval.
     """
     try:
         print(f"[DIRECT] Processing: {query}")
-        result = smart_search(query, chapter)
         
-        # --- NEW LOGIC: Detect "how-to-solve" queries ---
-        query_lower = query.lower()
-        is_solve_query = (
-            result['type'] in ['exercise', 'answer'] and
-            any(k in query_lower for k in ['how to', 'explain', 'solve', 'step by step', 'steps to'])
-        )
-
-        if is_solve_query:
-            print("[DIRECT] Detected 'how-to-solve' query. Gathering context...")
-            ex_id = result.get('exercise_id')
-            if not ex_id:
-                 # Fallback if smart_search didn't find an ID (e.g. "how to solve this [pasted text]")
-                return run_rag(query, result['results'])
-
-            # 1. Get Exercise
+        # 1. Try to find an Exercise ID immediately (Regex is faster/more accurate than semantic search)
+        # Matches "6.9", "Exercise 6.9", "6.14", etc.
+        id_match = re.search(r'(\d+\.\d+)', query)
+        
+        # --- PATH A: ID DETECTED (The "Smart" Path) ---
+        if id_match:
+            ex_id = id_match.group(1)
+            print(f"[DIRECT] Detected ID {ex_id}. Entering targeted retrieval mode.")
+            
+            # A. Get Exercise Text
             exercise_docs = get_exercise(ex_id, chapter)
-            exercise_text = exercise_docs[0].page_content if exercise_docs else "Exercise text not found."
+            exercise_text = exercise_docs[0].page_content if exercise_docs else f"Text for exercise {ex_id} not found."
             
-            # 2. Get Answer
-            answer_docs = get_answer(ex_id, chapter) # Get fresh in case result['type'] was 'exercise'
+            # B. Get Answer Key (Crucial Step)
+            answer_docs = get_answer(ex_id, chapter)
+            answer_text = answer_docs[0].page_content if answer_docs else "Answer key not found in database."
             
-            # 3. Get relevant Theory
-            # We use the exercise text itself to find related theory
-            theory_docs = get_theory_concepts(exercise_text, chapter, limit=3)
+            # C. Get Related Theory (Context)
+            theory_docs = get_theory_concepts(exercise_text, chapter, limit=2)
             
-            # 4. Bundle all docs
+            # D. Combine Context
             all_docs = exercise_docs + answer_docs + theory_docs
-            if not all_docs:
-                return { "answer": f"I found exercise {ex_id}, but I couldn't find the text, answer, or related theory to explain it.", "type": "error", "metadata": { "chapter": chapter, "query": query, "success": False } }
-
-            # 5. Create a new, specific query for the LLM
+            
+            # E. Prompt the LLM specifically to look for the answer
             solve_query = f"""
-            A student is asking how to solve an exercise. Your job is to provide a step-by-step explanation.
-            Use the following context:
-            1. The EXERCISE.
-            2. The FINAL ANSWER (if available).
-            3. Related THEORY from the textbook.
-
-            **Student's Question:** {query}
-            **Exercise {ex_id}:** {exercise_text}
-
-            Provide a clear, pedagogical, step-by-step explanation of how to arrive at the final answer.
-            Base your explanation ONLY on the provided context.
+            You are a helpful tutor. A student is asking about Exercise {ex_id}.
+            
+            User Query: "{query}"
+            
+            Here is the data from the textbook:
+            1. [THE EXERCISE PROBLEM]:
+            {exercise_text}
+            
+            2. [THE OFFICIAL ANSWER KEY]:
+            {answer_text}
+            
+            3. [RELEVANT THEORY]:
+            {chr(10).join([d.page_content for d in theory_docs])}
+            
+            INSTRUCTIONS:
+            - If the user asked for the **answer**, provide the 'Official Answer Key' clearly.
+            - If the user asked **how to solve it**, provide a step-by-step explanation using the Theory.
+            - If the answer key says "Not found", admit that you don't have the official final number, but explain the method.
             """
             
-            # 6. Call run_rag with the new prompt and bundled context
             answer = run_rag(solve_query, all_docs)
             
             return {
                 "answer": answer,
-                "type": "explanation",
+                "type": "targeted_retrieval",
                 "metadata": {
                     "chapter": chapter,
                     "query": query,
                     "exercise_id": ex_id,
-                    "num_results": len(all_docs),
+                    "found_answer": bool(answer_docs),
                     "success": True
                 }
             }
 
-        # If we have results, format them nicely (Original Logic)
-        if result['results']:
-            # For simple exercises/answers, return raw content
-            if result['type'] in ['exercise', 'answer', 'example']:
-                answer = result['formatted_text']
-            # For theory, use LLM to synthesize
-            else:
-                answer = run_rag(query, result['results'])
+        # --- PATH B: NO ID (General Semantic Search) ---
+        # This handles "What is Bayes theorem?" etc.
         else:
-            answer = result['formatted_text']
-        
-        return {
-            "answer": answer,
-            "type": result['type'],
-            "metadata": {
-                "chapter": chapter,
-                "query": query,
-                "num_results": len(result['results']),
-                "success": len(result['results']) > 0
+            print("[DIRECT] No ID detected. Running semantic search.")
+            result = smart_search(query, chapter)
+            
+            if result['results']:
+                answer = run_rag(query, result['results'])
+            else:
+                answer = "I couldn't find relevant information in the textbook for that query."
+            
+            return {
+                "answer": answer,
+                "type": result.get('type', 'general'),
+                "metadata": {
+                    "chapter": chapter,
+                    "query": query,
+                    "num_results": len(result.get('results', [])),
+                    "success": len(result.get('results', [])) > 0
+                }
             }
-        }
+
     except Exception as e:
         print(f"[DIRECT ERROR] {str(e)}")
         return {
             "answer": f"Error processing query: {str(e)}",
             "type": "error",
-            "metadata": {
-                "chapter": chapter,
-                "query": query,
-                "error": str(e),
-                "success": False
-            }
+            "metadata": {"error": str(e), "success": False}
         }
+    
+

@@ -1,92 +1,135 @@
 """
 Main RAG Pipeline Orchestrator
-Handles routing between agent mode and direct mode based on query complexity.
+Uses an LLM Router to intelligently distinguish between:
+1. General Chat (Greetings, feelings, small talk)
+2. Direct Content (Exercises, definitions, simple questions)
+3. Agent Reasoning (Complex comparisons, multi-step logic)
 """
 
 from .rag_agent import ask_agent, ask_direct
+from .rag_runtime import run_general_chat, llm # Import the initialized LLM
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import JsonOutputParser
 import re
 
-
-def detect_query_complexity(query: str) -> str:
+def semantic_router(query: str) -> str:
     """
-    Determine if query needs agent reasoning or can be handled directly.
-    
-    Returns:
-        'direct' - All single-step queries (exercise, answer, theory explanations, how-to-solve)
-        'agent'  - True multi-step reasoning (compare, follow-up, etc.)
+    Uses the LLM to decide the intent of the user.
+    Returns one of: 'general', 'direct', 'agent'
+    """
+    try:
+        # This prompt teaches the LLM how to route traffic
+        router_prompt = ChatPromptTemplate.from_template("""
+        You are an intent classifier for a Probability & Statistics Tutor Bot.
+        Analyze the user's input and classify it into one of three categories:
+        
+        1. "general": 
+           - Casual conversation ("hi", "how are you", "cool", "thanks")
+           - Emotional responses ("I'm stressed", "this is hard", "it's great")
+           - General study advice ("how should I study?")
+           - Anything NOT related to specific probability/statistics content.
+
+        2. "direct":
+           - Questions asking for specific exercises ("exercise 6.9", "6.14")
+           - Questions asking for answers ("answer to 2.3")
+           - "How to solve" specific problems.
+           - Simple definitions ("what is variance?", "define mean")
+
+        3. "agent":
+           - Complex questions requiring reasoning.
+           - Comparisons ("difference between X and Y")
+           - Relationships ("how does sample size affect error?")
+        
+        USER INPUT: "{query}"
+        
+        Return a JSON object with a single key "route".
+        Example: {{"route": "general"}}
+        """)
+
+        # Create chain: Prompt -> LLM -> JSON Parser
+        chain = router_prompt | llm | JsonOutputParser()
+        
+        # Run the router
+        result = chain.invoke({"query": query})
+        route = result.get("route", "direct") # Default to direct if unsure
+        
+        print(f"[Router] Analyzed intent: '{query}' -> {route.upper()}")
+        return route
+
+    except Exception as e:
+        print(f"[Router Error] {e}. Falling back to Regex.")
+        return fallback_regex_router(query)
+
+
+def fallback_regex_router(query: str) -> str:
+    """
+    Backup logic in case the LLM Router fails (network error, etc).
     """
     query_lower = query.lower()
     
-    solve_patterns = [
-        r'how to solve', 'explain exercise', 'step by step', 'steps to solve',
-        r'solve.*?\d+\.\d+', r'explain.*?\d+\.\d+'
-    ]
-    if any(re.search(pattern, query_lower) for pattern in solve_patterns):
-        print("[Pipeline] Detected 'how-to-solve' query -> Routing to DIRECT")
+    # 1. Check for ID (Strongest Signal)
+    if re.search(r'\d+\.\d+', query_lower):
         return 'direct'
-
-    agent_indicators = [
-        'compare', 'difference between', 'relationship between',
-        ' and ', ' vs ', ' versus '
-    ]
-
-    if any(indicator in query_lower for indicator in agent_indicators):
-        print("[Pipeline] Detected 'multi-step' query -> Routing to AGENT")
+        
+    # 2. Check for Chat keywords
+    chat_triggers = ['hi', 'hello', 'thanks', 'great', 'good', 'bye', 'stress']
+    if any(x in query_lower for x in chat_triggers):
+        return 'general'
+        
+    # 3. Check for Agent keywords
+    agent_triggers = ['compare', 'difference', ' vs ']
+    if any(x in query_lower for x in agent_triggers):
         return 'agent'
         
-    print("[Pipeline] Detected 'single-step' query -> Routing to DIRECT")
     return 'direct'
 
 
 def ask_pipeline(query: str, params: dict = None) -> dict:
     """
     Main pipeline entry point.
-    
-    Args:
-        query: User's question
-        params: Optional parameters
-            - chapter (int): Chapter number filter
-            - mode (str): 'agent' or 'direct' to force specific mode
-            - max_results (int): Maximum number of results
-            
-    Returns:
-        dict with:
-            - answer (str): The generated answer
-            - mode (str): Which mode was used ('agent' or 'direct')
-            - metadata (dict): Additional information
-            - sources (list): Source documents used
     """
     params = params or {}
     chapter = params.get('chapter')
     forced_mode = params.get('mode')
     
-    # Determine mode
+    # 1. Determine Route (LLM Decision)
     if forced_mode:
         mode = forced_mode
     else:
-        # Use our updated detection logic
-        mode = detect_query_complexity(query)
+        mode = semantic_router(query)
     
     print(f"[Pipeline] Mode: {mode} | Chapter: {chapter} | Query: {query[:50]}...")
     
-    # Execute based on mode
-    if mode == 'direct':
+    # 2. Execute Route
+    
+    # --- ROUTE A: GENERAL CHAT (No DB) ---
+    if mode == 'general':
+        answer = run_general_chat(query)
+        return {
+            "answer": answer,
+            "mode": "general_chat",
+            "metadata": {"success": True}
+        }
+
+    # --- ROUTE B: DIRECT RAG (Vector Search) ---
+    elif mode == 'direct':
         result = ask_direct(query, chapter)
         return {
             "answer": result['answer'],
             "mode": "direct",
-            "metadata": result['metadata'],
+            "metadata": result.get('metadata', {}),
             "query_type": result.get('type', 'unknown')
         }
+        
+    # --- ROUTE C: AGENT RAG (Reasoning) ---
     else:
         result = ask_agent(query, chapter)
         return {
             "answer": result['answer'],
             "mode": "agent",
-            "metadata": result['metadata'],
+            "metadata": result.get('metadata', {}),
             "reasoning_steps": len(result.get('steps', []))
         }
-
 
 def batch_ask(queries: list, params: dict = None) -> list:
     """

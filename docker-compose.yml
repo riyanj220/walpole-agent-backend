@@ -5,7 +5,7 @@ services:
   web:
     build: .
     # Keep your existing command
-    command: gunicorn backend.wsgi:application --bind 0.0.0.0:8000 --workers 5 --threads 2 --timeout 120
+    command: gunicorn backend.wsgi:application --bind 0.0.0.0:8000 --workers 2 --threads 1 --timeout 120
     
     # CHANGE: Use 'ports' instead of 'expose'
     # We map host port 8000 to container port 8000.

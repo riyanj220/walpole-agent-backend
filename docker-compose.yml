@@ -3,27 +3,16 @@ version: '3.8'
 services:
   # 1. Your Django App Service
   web:
-    build: .  # Build from the Dockerfile in this directory
-    command: gunicorn backend.wsgi:application --bind 0.0.0.0:8000 --workers 5 --threads 2 --timeout 120 # <-- IMPORTANT: Change 'your_project_name'
-    # volumes:
-    #   - static_volume:/app/static # Share static files with Nginx
-    expose:
-      - 8000 # Internal port, not visible to the world
-    env_file:
-      - .env   # Load your .env file
-    # depends_on:
-    #   - db     # Add this if you decide to add a Postgres database later
-
-  # 2. The Nginx Webserver (Reverse Proxy)
-  nginx:
-    image: nginx:latest
+    build: .
+    # Keep your existing command
+    command: gunicorn backend.wsgi:application --bind 0.0.0.0:8000 --workers 5 --threads 2 --timeout 120
+    
+    # CHANGE: Use 'ports' instead of 'expose'
+    # We map host port 8000 to container port 8000.
+    # "127.0.0.1" ensures it is only accessible inside the Droplet (Secure),
+    # so people can't bypass Nginx and go straight to http://IP:8000
     ports:
-      - "80:80"   # This exposes your app to the world on Port 80
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro # Read-only Nginx config
-      # - static_volume:/app/static:ro      # Read-only static files
-    depends_on:
-      - web
-
-# volumes:
-#   static_volume: # This volume is shared between 'web' and 'nginx'
+      - "127.0.0.1:8000:8000"
+      
+    env_file:
+      - .env

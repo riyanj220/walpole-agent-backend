@@ -56,7 +56,15 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-CORS_ALLOWED_ORIGINS=["http://localhost:5173","https://walpole-agent-frontend.vercel.app"]
+CORS_ALLOWED_ORIGINS=["http://localhost:5173",
+                      "https://walpole-agent-frontend.vercel.app",
+                      "https://walpoletutor.me",
+                      "https://www.walpoletutor.me",]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://walpoletutor.me",
+    "https://www.walpoletutor.me",
+]
 
 CORS_ALLOW_CREDENTIALS = True
 

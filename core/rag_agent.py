@@ -1,6 +1,7 @@
 from langchain.agents import create_react_agent, AgentExecutor
 from langchain.tools import Tool
-from langchain_core.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate, ChatPromptTemplate
+from langchain_core.output_parsers import JsonOutputParser, StrOutputParser
 from .rag_tools import (
     get_exercise, 
     get_answer, 
@@ -11,6 +12,115 @@ from .rag_tools import (
 )
 from .rag_runtime import run_rag,llm
 import re
+
+def classify_exercise_intent(query: str, exercise_id: str) -> str:
+    """
+    Uses LLM to decide exactly what the user wants regarding a specific exercise.
+    Returns: 'get_question', 'get_answer', or 'explain_solution'
+    """
+    # JsonOutputParser: Parses the LLM's string output into a Python dictionary.
+    parser = JsonOutputParser()
+    
+    prompt = ChatPromptTemplate.from_template("""
+    You are a query analyzer for a Statistics Textbook.
+    The user is asking about Exercise {exercise_id}.
+    
+    Classify their intent into ONE category:
+    1. "get_question": User wants to read/see the exercise text (e.g., "what is 6.9?", "read me 6.9")
+    2. "get_answer": User JUST wants the final number/key (e.g., "answer to 6.9", "is 6.9 a or b?")
+    3. "explain_solution": User wants to know HOW to solve it (e.g., "how do I do 6.9?", "solution for 6.9", "help with 6.9")
+
+    USER QUERY: "{query}"
+
+    Return JSON only:
+    {{ "intent": "get_question" | "get_answer" | "explain_solution" }}
+    """)
+
+    try:
+        chain = prompt | llm | parser
+        result = chain.invoke({"query": query, "exercise_id": exercise_id})
+        return result.get("intent", "explain_solution")
+    except Exception as e:
+        print(f"[Intent Error] {e}")
+        return "explain_solution" # Fallback to explanation if uncertain
+
+
+# =====================================================
+#  Targeted Response Generation
+# =====================================================
+
+def generate_targeted_response(intent: str, query: str, data: dict) -> str:
+    """
+    Generates a specific, professional response based on the intent.
+    This replaces run_rag for direct queries to avoid 'meta-talk'.
+    """
+    
+    # 1. Prompt for getting the Answer Key only
+    if intent == "get_answer":
+        template = """
+        You are a strict Answer Key Assistant.
+        Task: Provide the official answer to the exercise based ONLY on the context.
+        
+        Rules:
+        - Output the final value/answer clearly.
+        - Do NOT explain the steps unless the answer key is missing.
+        - Do NOT say "The student is asking..." or "Here is the answer". Just give the answer.
+        
+        Context (Official Answer):
+        {answer_text}
+        
+        User Question: {query}
+        """
+
+    # 2. Prompt for getting the Question Text only
+    elif intent == "get_question":
+        template = """
+        You are a Textbook Reader.
+        Task: Output the exact text of the requested exercise.
+        
+        Rules:
+        - Quote the exercise text exactly as it appears in the context.
+        - Do NOT solve it.
+        
+        Context (Exercise Text):
+        {exercise_text}
+        
+        User Question: {query}
+        """
+
+    # 3. Prompt for Explanation (The detailed tutor)
+    else: # explain_solution
+        template = """
+        You are a Professional Statistics Tutor.
+        Task: Explain the solution to the exercise step-by-step.
+        
+        Context:
+        - Exercise: {exercise_text}
+        - Official Answer: {answer_text}
+        - Relevant Theory: {theory_text}
+        
+        Rules:
+        - Start directly with the solution steps.
+        - Do NOT say "The student is asking about...".
+        - Use the Official Answer to verify your logic, but show the work to get there.
+        - Use LaTeX for math where appropriate (e.g., $P(X < k)$).
+        
+        User Question: {query}
+        """
+
+    prompt = ChatPromptTemplate.from_template(template)
+    
+    # StrOutputParser: Converts the LLM response object directly into a clean string.
+    output_parser = StrOutputParser()
+    
+    chain = prompt | llm | output_parser
+    
+    return chain.invoke({
+        "query": query,
+        "exercise_text": data.get("exercise_text", ""),
+        "answer_text": data.get("answer_text", ""),
+        "theory_text": data.get("theory_text", "")
+    })
 
 # =====================================================
 # Tool Definitions
@@ -230,73 +340,59 @@ def ask_agent(query: str, chapter: int = None) -> dict:
 # =====================================================
 def ask_direct(query: str, chapter: int = None) -> dict:
     """
-    Direct retrieval without agent reasoning.
-    Optimized for Exercise/Answer retrieval.
+    Direct retrieval with Intent Detection.
     """
     try:
         print(f"[DIRECT] Processing: {query}")
         
-        # 1. Try to find an Exercise ID immediately (Regex is faster/more accurate than semantic search)
-        # Matches "6.9", "Exercise 6.9", "6.14", etc.
+        # 1. Regex Match for ID
         id_match = re.search(r'(\d+\.\d+)', query)
         
-        # --- PATH A: ID DETECTED (The "Smart" Path) ---
+        # --- PATH A: ID DETECTED ---
         if id_match:
             ex_id = id_match.group(1)
-            print(f"[DIRECT] Detected ID {ex_id}. Entering targeted retrieval mode.")
+            print(f"[DIRECT] Detected ID {ex_id}. Determining specific intent...")
             
-            # A. Get Exercise Text
+            # 2. Detect Intent (Get Question vs Get Answer vs Explain)
+            intent = classify_exercise_intent(query, ex_id)
+            print(f"[DIRECT] Intent detected: {intent}")
+
+            # 3. Gather Data based on logic
+            # Always get exercise and answer to ensure context is available
             exercise_docs = get_exercise(ex_id, chapter)
-            exercise_text = exercise_docs[0].page_content if exercise_docs else f"Text for exercise {ex_id} not found."
+            exercise_text = exercise_docs[0].page_content if exercise_docs else f"Text for {ex_id} not found."
             
-            # B. Get Answer Key (Crucial Step)
             answer_docs = get_answer(ex_id, chapter)
-            answer_text = answer_docs[0].page_content if answer_docs else "Answer key not found in database."
+            answer_text = answer_docs[0].page_content if answer_docs else "Answer key not found."
             
-            # C. Get Related Theory (Context)
-            theory_docs = get_theory_concepts(exercise_text, chapter, limit=2)
+            # Only fetch theory if we need to EXPLAIN
+            theory_text = ""
+            if intent == "explain_solution":
+                theory_docs = get_theory_concepts(exercise_text, chapter, limit=2)
+                theory_text = "\n\n".join([d.page_content for d in theory_docs])
+
+            # 4. Generate Response using the specific intent template
+            # We bundle the data into a dictionary for the generator
+            data_context = {
+                "exercise_text": exercise_text,
+                "answer_text": answer_text,
+                "theory_text": theory_text
+            }
             
-            # D. Combine Context
-            all_docs = exercise_docs + answer_docs + theory_docs
-            
-            # E. Prompt the LLM specifically to look for the answer
-            solve_query = f"""
-            You are a helpful tutor. A student is asking about Exercise {ex_id}.
-            
-            User Query: "{query}"
-            
-            Here is the data from the textbook:
-            1. [THE EXERCISE PROBLEM]:
-            {exercise_text}
-            
-            2. [THE OFFICIAL ANSWER KEY]:
-            {answer_text}
-            
-            3. [RELEVANT THEORY]:
-            {chr(10).join([d.page_content for d in theory_docs])}
-            
-            INSTRUCTIONS:
-            - If the user asked for the **answer**, provide the 'Official Answer Key' clearly.
-            - If the user asked **how to solve it**, provide a step-by-step explanation using the Theory.
-            - If the answer key says "Not found", admit that you don't have the official final number, but explain the method.
-            """
-            
-            answer = run_rag(solve_query, all_docs)
+            final_answer = generate_targeted_response(intent, query, data_context)
             
             return {
-                "answer": answer,
-                "type": "targeted_retrieval",
+                "answer": final_answer,
+                "type": f"targeted_{intent}",
                 "metadata": {
                     "chapter": chapter,
-                    "query": query,
                     "exercise_id": ex_id,
-                    "found_answer": bool(answer_docs),
+                    "intent": intent,
                     "success": True
                 }
             }
 
         # --- PATH B: NO ID (General Semantic Search) ---
-        # This handles "What is Bayes theorem?" etc.
         else:
             print("[DIRECT] No ID detected. Running semantic search.")
             result = smart_search(query, chapter)
@@ -311,9 +407,8 @@ def ask_direct(query: str, chapter: int = None) -> dict:
                 "type": result.get('type', 'general'),
                 "metadata": {
                     "chapter": chapter,
-                    "query": query,
                     "num_results": len(result.get('results', [])),
-                    "success": len(result.get('results', [])) > 0
+                    "success": True
                 }
             }
 

@@ -7,7 +7,7 @@ Uses an LLM Router to intelligently distinguish between:
 """
 
 from .rag_agent import ask_agent, ask_direct
-from .rag_runtime import run_general_chat, llm # Import the initialized LLM
+from .rag_runtime import run_general_chat, llm
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 import re

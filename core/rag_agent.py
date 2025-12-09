@@ -63,6 +63,7 @@ def generate_targeted_response(intent: str, query: str, data: dict) -> str:
         
         Rules:
         - Output the final value/answer clearly.
+        - Use LaTeX in Markdown for any mathematical expressions (inline with $...$, block with $$...$$).
         - Do NOT explain the steps unless the answer key is missing.
         - Do NOT say "The student is asking..." or "Here is the answer". Just give the answer.
         
@@ -80,6 +81,7 @@ def generate_targeted_response(intent: str, query: str, data: dict) -> str:
         
         Rules:
         - Quote the exercise text exactly as it appears in the context.
+        - If there is a formula, rewrite it in LaTeX in Markdown (use $...$ or $$...$$) so it renders cleanly.
         - Do NOT solve it.
         
         Context (Exercise Text):
@@ -88,8 +90,9 @@ def generate_targeted_response(intent: str, query: str, data: dict) -> str:
         User Question: {query}
         """
 
+
     # 3. Prompt for Explanation (The detailed tutor)
-    else: # explain_solution
+    else:  # explain_solution
         template = """
         You are a Professional Statistics Tutor.
         Task: Explain the solution to the exercise step-by-step.
@@ -103,10 +106,11 @@ def generate_targeted_response(intent: str, query: str, data: dict) -> str:
         - Start directly with the solution steps.
         - Do NOT say "The student is asking about...".
         - Use the Official Answer to verify your logic, but show the work to get there.
-        - Use LaTeX for math where appropriate (e.g., $P(X < k)$).
+        - Use LaTeX for math where appropriate (inline with $...$, block with $$...$$).
         
         User Question: {query}
         """
+
 
     prompt = ChatPromptTemplate.from_template(template)
     
@@ -252,6 +256,8 @@ IMPORTANT RULES:
 8. **DO NOT invent new tool names.** Only use the tools provided: {tool_names}.
 9. If a tool returns "ERROR:", try a different approach or inform the user.
 10. Keep your final answer concise and based ONLY on tool results.
+11. When you write mathematical expressions in the Final Answer, format them as LaTeX in Markdown ($...$ for inline, $$...$$ for block equations). Rewrite messy textbook formulas into clean LaTeX.
+12. The content under "Thought", "Action", and "Observation" is for your internal reasoning only. The text after "Final Answer:" must be a clean explanation that can be shown directly to the student.
 
 FORMAT TO FOLLOW:
 Question: the input question
@@ -267,6 +273,7 @@ BEGIN!
 
 Question: {input}
 Thought: {agent_scratchpad}""")
+
 
 # =====================================================
 # Create Agent

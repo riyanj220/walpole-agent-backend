@@ -299,6 +299,57 @@ agent_executor = AgentExecutor(
 # =====================================================
 #  Main Agent Interface
 # =====================================================
+def normalize_latex_for_markdown(text: str) -> str:
+    r"""
+    Convert TeX environments into Markdown math so remark-math + KaTeX can render them.
+
+    - \begin{equation*}...\end{equation*}  →  $$ ... $$
+    - \[ ... \]                              →  $$ ... $$
+    - Any other \begin{X}...\end{X} block   →  $$ ... $$
+      (e.g. \begin{cases}...\end{cases})
+    """
+
+    # 1) \begin{equation}...\end{equation} → $$ ... $$
+    text = re.sub(
+        r"\\begin{equation\*?}(.*?)\\end{equation\*?}",
+        lambda m: f"$$ {m.group(1).strip()} $$",
+        text,
+        flags=re.DOTALL,
+    )
+
+    # 2) \[ ... \] → $$ ... $$
+    text = re.sub(
+        r"\\\[(.*?)\\\]",
+        lambda m: f"$$ {m.group(1).strip()} $$",
+        text,
+        flags=re.DOTALL,
+    )
+
+    # 3) Any other LaTeX environment: \begin{X}...\end{X} → $$ ... $$
+    #    (this will catch things like \begin{cases}...\end{cases})
+    text = re.sub(
+        r"\\begin{([^}]+)}(.*?)\\end{\1}",
+        lambda m: f"$$\n\\begin{{{m.group(1)}}}{m.group(2)}\\end{{{m.group(1)}}}\n$$",
+        text,
+        flags=re.DOTALL,
+    )
+
+    return text
+
+def format_lettered_subparts(text: str) -> str:
+    """
+    Ensure exercise sub-parts (a), (b), (c), (d) start on new lines.
+
+    Turns:
+        "... = 1. (a) Show that ..." 
+    into:
+        "... = 1.
+
+        (a) Show that ..."
+    """
+    # space + (a|b|c|d) + space  ->  two newlines + (a|b|c|d) + space
+    return re.sub(r"\s\(([a-d])\)\s", r"\n\n(\1) ", text)
+
 def ask_agent(query: str, chapter: int = None) -> dict:
     """
     Main interface to ask the AI Agent.
@@ -312,14 +363,16 @@ def ask_agent(query: str, chapter: int = None) -> dict:
         
         # Execute agent
         result = agent_executor.invoke({"input": enhanced_query})
-        
+        clean_answer = normalize_latex_for_markdown(result["output"])
+        # clean_answer = format_lettered_subparts(clean_answer)
+
         tools_used = [
             step[0].tool for step in result.get("intermediate_steps", [])
             if hasattr(step[0], 'tool')
         ]
         
         return {
-            "answer": result["output"],
+            "answer": clean_answer,
             "steps": result.get("intermediate_steps", []),
             "metadata": {
                 "chapter": chapter,
@@ -387,6 +440,8 @@ def ask_direct(query: str, chapter: int = None) -> dict:
             }
             
             final_answer = generate_targeted_response(intent, query, data_context)
+            final_answer = normalize_latex_for_markdown(final_answer)
+            # final_answer = format_lettered_subparts(final_answer)
             
             return {
                 "answer": final_answer,
@@ -409,6 +464,9 @@ def ask_direct(query: str, chapter: int = None) -> dict:
             else:
                 answer = "I couldn't find relevant information in the textbook for that query."
             
+            answer = normalize_latex_for_markdown(answer)
+            # answer = format_lettered_subparts(answer)
+
             return {
                 "answer": answer,
                 "type": result.get('type', 'general'),

@@ -364,7 +364,7 @@ def ask_agent(query: str, chapter: int = None) -> dict:
         # Execute agent
         result = agent_executor.invoke({"input": enhanced_query})
         clean_answer = normalize_latex_for_markdown(result["output"])
-        # clean_answer = format_lettered_subparts(clean_answer)
+        clean_answer = format_lettered_subparts(clean_answer)
 
         tools_used = [
             step[0].tool for step in result.get("intermediate_steps", [])
@@ -441,7 +441,7 @@ def ask_direct(query: str, chapter: int = None) -> dict:
             
             final_answer = generate_targeted_response(intent, query, data_context)
             final_answer = normalize_latex_for_markdown(final_answer)
-            # final_answer = format_lettered_subparts(final_answer)
+            final_answer = format_lettered_subparts(final_answer)
             
             return {
                 "answer": final_answer,
@@ -465,7 +465,7 @@ def ask_direct(query: str, chapter: int = None) -> dict:
                 answer = "I couldn't find relevant information in the textbook for that query."
             
             answer = normalize_latex_for_markdown(answer)
-            # answer = format_lettered_subparts(answer)
+            answer = format_lettered_subparts(answer)
 
             return {
                 "answer": answer,

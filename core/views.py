@@ -8,6 +8,7 @@ from .rag_pipeline import (
     get_chapter_summary,
     health_check
 )
+from .rag_runtime import supabase  # <--- Import Supabase client
 import logging
 
 logger = logging.getLogger(__name__)
@@ -21,24 +22,20 @@ def ask(request):
     POST body:
     {
         "query": "What is exercise 6.14?",
+        "user_id": "uuid-from-frontend",    # <--- NEW
+        "chat_id": "uuid-or-null",          # <--- NEW
         "params": {
-            "chapter": 6,           // Optional: filter by chapter
-            "mode": "agent",        // Optional: force 'agent' or 'direct' mode
-            "max_results": 5        // Optional: max results to return
+            "chapter": 6, 
+            "mode": "agent", 
+            "max_results": 5
         }
-    }
-    
-    Response:
-    {
-        "answer": "...",
-        "mode": "agent|direct",
-        "metadata": {...},
-        "query": "..."
     }
     """
     try:
         payload = request.data or {}
         query = payload.get("query", "").strip()
+        user_id = payload.get("user_id") # Get user_id from frontend
+        chat_id = payload.get("chat_id") # Get chat_id from frontend (if active)
         params = payload.get("params", {})
 
         if not query:
@@ -47,13 +44,68 @@ def ask(request):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        logger.info(f"Processing query: {query[:100]}")
+        logger.info(f"Processing query: {query[:100]} | User: {user_id} | Chat: {chat_id}")
         
-        # Process query through pipeline
+        # =====================================================
+        #  1. DATABASE: HANDLE CHAT SESSION
+        # =====================================================
+        # If we have a user but no chat_id, this is a NEW conversation.
+        if supabase and user_id and not chat_id:
+            try:
+                # Generate a simple title from the first few words
+                title = " ".join(query.split()[:5]) + "..."
+                
+                # Insert new chat row
+                chat_data = supabase.table("chats").insert({
+                    "user_id": user_id,
+                    "title": title
+                }).execute()
+                
+                # Grab the new ID
+                if chat_data.data:
+                    chat_id = chat_data.data[0]['id']
+                    logger.info(f"Created new chat session: {chat_id}")
+            except Exception as e:
+                logger.error(f"Failed to create chat session: {e}")
+                # We continue anyway, just without saving history
+        
+        # =====================================================
+        #  2. DATABASE: SAVE USER MESSAGE
+        # =====================================================
+        if supabase and chat_id:
+            try:
+                supabase.table("messages").insert({
+                    "chat_id": chat_id,
+                    "role": "user",
+                    "content": query
+                }).execute()
+            except Exception as e:
+                logger.error(f"Failed to save user message: {e}")
+
+        # =====================================================
+        #  3. CORE PIPELINE (Your existing AI logic)
+        # =====================================================
         result = ask_pipeline(query, params=params)
         
-        # Add original query to response
+        # Add original query and updated chat_id to response
         result["query"] = query
+        result["chat_id"] = chat_id # Return this so frontend can update state
+
+        # =====================================================
+        #  4. DATABASE: SAVE BOT RESPONSE
+        # =====================================================
+        if supabase and chat_id:
+            try:
+                # Determine the content to save (the answer string)
+                bot_content = result.get("answer", "")
+                
+                supabase.table("messages").insert({
+                    "chat_id": chat_id,
+                    "role": "assistant",
+                    "content": bot_content
+                }).execute()
+            except Exception as e:
+                logger.error(f"Failed to save bot response: {e}")
         
         return Response(result, status=status.HTTP_200_OK)
         

@@ -6,14 +6,29 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from decouple import config
+from supabase import create_client, Client
 
 # =====================================================
-# 🔹 Base Configuration
+#  Base Configuration
 # =====================================================
 GROQ_API_KEY = config("GROQ_API_KEY", default=None) 
 MODEL_NAME = "llama-3.1-8b-instant" 
 EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
 
+
+#  Supabase Configuration
+SUPABASE_URL = config("SUPABASE_URL", default=None)
+# Use SERVICE_KEY for backend to have admin rights (bypass RLS if needed)
+SUPABASE_KEY = config("SUPABASE_SERVICE_KEY", default=None)
+
+supabase: Client = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("[INIT] Supabase client initialized successfully.")
+    except Exception as e:
+        print(f"[INIT ERROR] Could not initialize Supabase: {e}")
+        
 # =====================================================
 #  Vector Store Loader
 # =====================================================

@@ -108,22 +108,23 @@ def ask(request):
                 # We continue anyway, just without saving history
         
         # =====================================================
+        #  2. DATABASE: SAVE USER MESSAGE
+        # =====================================================
+        if supabase and chat_id:
+            try:
+                supabase.table("messages").insert({
+                    "chat_id": chat_id,
+                    "role": "user",
+                    "content": query
+                }).execute()
+            except Exception as e:
+                logger.error(f"Failed to save user message: {e}")
+
+        # =====================================================
         #  3. FETCH HISTORY FOR CONTEXT
         # =====================================================
         chat_history = []
         if chat_id:
-            # We fetch history AFTER saving the new user msg, 
-            # but we usually want the history *before* the current query 
-            # to avoid duplication, OR we format carefully.
-            # Let's fetch the previous N messages (excluding the one we just saved if possible, 
-            # or just rely on the LLM knowing the last one is the current query).
-            
-            # Actually, simpler: Fetch everything, then in pipeline separate current query.
-            # But standard practice: Pass History + Current Query separately.
-            
-            # Let's get previous interaction (excluding the current one we just inserted)
-            # A simple way is to rely on 'limit' and filtering, but let's just use the helper
-            # and slice if necessary.
             chat_history = get_chat_history(chat_id, limit=6)
             
             # Remove the very last message if it matches our current query (since we just inserted it)

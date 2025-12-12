@@ -240,6 +240,9 @@ tools = [
 # =====================================================
 agent_prompt = PromptTemplate.from_template("""You are a probability and statistics textbook assistant. Your job is to help students by retrieving specific content from the textbook.
 
+CHAT HISTORY:
+{chat_history}
+                                            
 AVAILABLE TOOLS:
 {tools}
 
@@ -350,7 +353,7 @@ def format_lettered_subparts(text: str) -> str:
     # space + (a|b|c|d) + space  ->  two newlines + (a|b|c|d) + space
     return re.sub(r"\s\(([a-d])\)\s", r"\n\n(\1) ", text)
 
-def ask_agent(query: str, chapter: int = None) -> dict:
+def ask_agent(query: str, chapter: int = None, chat_history: list = []) -> dict:
     """
     Main interface to ask the AI Agent.
     """
@@ -361,8 +364,12 @@ def ask_agent(query: str, chapter: int = None) -> dict:
         
         print(f"[AGENT] Processing: {enhanced_query}")
         
+        history_str = ""
+        if chat_history:
+            history_str = "\n".join([f"{role.title()}: {msg}" for role, msg in chat_history])
+
         # Execute agent
-        result = agent_executor.invoke({"input": enhanced_query})
+        result = agent_executor.invoke({"input": enhanced_query, "chat_history": history_str})
         clean_answer = normalize_latex_for_markdown(result["output"])
         clean_answer = format_lettered_subparts(clean_answer)
 
@@ -398,46 +405,33 @@ def ask_agent(query: str, chapter: int = None) -> dict:
 # =====================================================
 #  Direct Search (IMPROVED)
 # =====================================================
-def ask_direct(query: str, chapter: int = None) -> dict:
+def ask_direct(query: str, chapter: int = None, chat_history: list = []) -> dict: # <--- Added history
     """
     Direct retrieval with Intent Detection.
     """
     try:
         print(f"[DIRECT] Processing: {query}")
         
-        # 1. Regex Match for ID
         id_match = re.search(r'(\d+\.\d+)', query)
         
-        # --- PATH A: ID DETECTED ---
         if id_match:
             ex_id = id_match.group(1)
             print(f"[DIRECT] Detected ID {ex_id}. Determining specific intent...")
-            
-            # 2. Detect Intent (Get Question vs Get Answer vs Explain)
             intent = classify_exercise_intent(query, ex_id)
             print(f"[DIRECT] Intent detected: {intent}")
 
-            # 3. Gather Data based on logic
-            # Always get exercise and answer to ensure context is available
             exercise_docs = get_exercise(ex_id, chapter)
             exercise_text = exercise_docs[0].page_content if exercise_docs else f"Text for {ex_id} not found."
             
             answer_docs = get_answer(ex_id, chapter)
             answer_text = answer_docs[0].page_content if answer_docs else "Answer key not found."
             
-            # Only fetch theory if we need to EXPLAIN
             theory_text = ""
             if intent == "explain_solution":
                 theory_docs = get_theory_concepts(exercise_text, chapter, limit=2)
                 theory_text = "\n\n".join([d.page_content for d in theory_docs])
 
-            # 4. Generate Response using the specific intent template
-            # We bundle the data into a dictionary for the generator
-            data_context = {
-                "exercise_text": exercise_text,
-                "answer_text": answer_text,
-                "theory_text": theory_text
-            }
+            data_context = {"exercise_text": exercise_text, "answer_text": answer_text, "theory_text": theory_text}
             
             final_answer = generate_targeted_response(intent, query, data_context)
             final_answer = normalize_latex_for_markdown(final_answer)
@@ -446,21 +440,16 @@ def ask_direct(query: str, chapter: int = None) -> dict:
             return {
                 "answer": final_answer,
                 "type": f"targeted_{intent}",
-                "metadata": {
-                    "chapter": chapter,
-                    "exercise_id": ex_id,
-                    "intent": intent,
-                    "success": True
-                }
+                "metadata": {"chapter": chapter, "exercise_id": ex_id, "intent": intent, "success": True}
             }
 
-        # --- PATH B: NO ID (General Semantic Search) ---
         else:
             print("[DIRECT] No ID detected. Running semantic search.")
             result = smart_search(query, chapter)
             
             if result['results']:
-                answer = run_rag(query, result['results'])
+                # Pass chat_history to run_rag
+                answer = run_rag(query, result['results'], chat_history=chat_history) # <--- Pass history
             else:
                 answer = "I couldn't find relevant information in the textbook for that query."
             
@@ -470,11 +459,7 @@ def ask_direct(query: str, chapter: int = None) -> dict:
             return {
                 "answer": answer,
                 "type": result.get('type', 'general'),
-                "metadata": {
-                    "chapter": chapter,
-                    "num_results": len(result.get('results', [])),
-                    "success": True
-                }
+                "metadata": {"chapter": chapter, "num_results": len(result.get('results', [])), "success": True}
             }
 
     except Exception as e:
@@ -484,5 +469,3 @@ def ask_direct(query: str, chapter: int = None) -> dict:
             "type": "error",
             "metadata": {"error": str(e), "success": False}
         }
-    
-

@@ -12,12 +12,17 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 import re
 
-def semantic_router(query: str) -> str:
+def semantic_router(query: str, chat_history: list=[]) -> str:
     """
     Uses the LLM to decide the intent of the user.
     Returns one of: 'general', 'direct', 'agent'
     """
     try:
+        context_str = ""
+        if chat_history:
+            last_role, last_msg = chat_history[-1]
+            context_str = f"\nPREVIOUS MESSAGE ({last_role}): {last_msg[:100]}...\n"
+
         # This prompt teaches the LLM how to route traffic
         router_prompt = ChatPromptTemplate.from_template("""
         You are an intent classifier for a Probability & Statistics Tutor Bot.
@@ -28,18 +33,23 @@ def semantic_router(query: str) -> str:
            - Emotional responses ("I'm stressed", "this is hard", "it's great")
            - General study advice ("how should I study?")
            - Anything NOT related to specific probability/statistics content.
+           - BUT: If the user is asking to explain the previous answer, it is NOT general.
+           - IMPORTANT: If the user asks for "an example", "more details", "why", or "how", it is NOT general.                                        
 
         2. "direct":
            - Questions asking for specific exercises ("exercise 6.9", "6.14")
            - Questions asking for answers ("answer to 2.3")
            - "How to solve" specific problems.
            - Simple definitions ("what is variance?", "define mean")
+           - Follow-up questions asking to elaborate on the previous math topic.                                              
 
         3. "agent":
            - Complex questions requiring reasoning.
            - Comparisons ("difference between X and Y")
            - Relationships ("how does sample size affect error?")
         
+        CONTEXT FROM HISTORY: {context_str}
+                                                         
         USER INPUT: "{query}"
         
         Return a JSON object with a single key "route".
@@ -50,8 +60,8 @@ def semantic_router(query: str) -> str:
         chain = router_prompt | llm | JsonOutputParser()
         
         # Run the router
-        result = chain.invoke({"query": query})
-        route = result.get("route", "direct") # Default to direct if unsure
+        result = chain.invoke({"query": query, "context_str": context_str})
+        route = result.get("route", "direct")
         
         print(f"[Router] Analyzed intent: '{query}' -> {route.upper()}")
         return route
@@ -84,7 +94,7 @@ def fallback_regex_router(query: str) -> str:
     return 'direct'
 
 
-def ask_pipeline(query: str, params: dict = None) -> dict:
+def ask_pipeline(query: str, params: dict = None, chat_history: list = []) -> dict:
     """
     Main pipeline entry point.
     """
@@ -104,7 +114,7 @@ def ask_pipeline(query: str, params: dict = None) -> dict:
     
     # --- ROUTE A: GENERAL CHAT (No DB) ---
     if mode == 'general':
-        answer = run_general_chat(query)
+        answer = run_general_chat(query, chat_history)
         return {
             "answer": answer,
             "mode": "general_chat",
@@ -113,7 +123,7 @@ def ask_pipeline(query: str, params: dict = None) -> dict:
 
     # --- ROUTE B: DIRECT RAG (Vector Search) ---
     elif mode == 'direct':
-        result = ask_direct(query, chapter)
+        result = ask_direct(query, chapter, chat_history)
         return {
             "answer": result['answer'],
             "mode": "direct",
@@ -123,7 +133,7 @@ def ask_pipeline(query: str, params: dict = None) -> dict:
         
     # --- ROUTE C: AGENT RAG (Reasoning) ---
     else:
-        result = ask_agent(query, chapter)
+        result = ask_agent(query, chapter, chat_history)
         return {
             "answer": result['answer'],
             "mode": "agent",

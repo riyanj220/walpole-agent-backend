@@ -13,6 +13,44 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# =====================================================
+#  HELPER: Fetch Chat History
+# =====================================================
+def get_chat_history(chat_id, limit=6):
+    """
+    Fetches the last 'limit' messages for context.
+    Returns a formatted string or list for the LLM.
+    """
+    if not supabase or not chat_id:
+        return []
+
+    try:
+        # Fetch messages (descending to get newest, then reverse)
+        response = supabase.table("messages")\
+            .select("role, content")\
+            .eq("chat_id", chat_id)\
+            .order("created_at", desc=True)\
+            .limit(limit)\
+            .execute()
+        
+        data = response.data
+        if not data:
+            return []
+
+        # Reverse to chronological order (Oldest -> Newest)
+        history_chronological = data[::-1]
+        
+        # Format as list of tuples or dicts for your pipeline
+        # Format: [("user", "msg"), ("assistant", "msg")]
+        formatted_history = [
+            (msg['role'], msg['content']) 
+            for msg in history_chronological
+        ]
+        return formatted_history
+
+    except Exception as e:
+        logger.error(f"Error fetching chat history: {e}")
+        return []
 
 @api_view(["POST"])
 def ask(request):
@@ -70,35 +108,41 @@ def ask(request):
                 # We continue anyway, just without saving history
         
         # =====================================================
-        #  2. DATABASE: SAVE USER MESSAGE
+        #  3. FETCH HISTORY FOR CONTEXT
         # =====================================================
-        if supabase and chat_id:
-            try:
-                supabase.table("messages").insert({
-                    "chat_id": chat_id,
-                    "role": "user",
-                    "content": query
-                }).execute()
-            except Exception as e:
-                logger.error(f"Failed to save user message: {e}")
+        chat_history = []
+        if chat_id:
+            # We fetch history AFTER saving the new user msg, 
+            # but we usually want the history *before* the current query 
+            # to avoid duplication, OR we format carefully.
+            # Let's fetch the previous N messages (excluding the one we just saved if possible, 
+            # or just rely on the LLM knowing the last one is the current query).
+            
+            # Actually, simpler: Fetch everything, then in pipeline separate current query.
+            # But standard practice: Pass History + Current Query separately.
+            
+            # Let's get previous interaction (excluding the current one we just inserted)
+            # A simple way is to rely on 'limit' and filtering, but let's just use the helper
+            # and slice if necessary.
+            chat_history = get_chat_history(chat_id, limit=6)
+            
+            # Remove the very last message if it matches our current query (since we just inserted it)
+            if chat_history and chat_history[-1][1] == query:
+                chat_history.pop()
 
         # =====================================================
-        #  3. CORE PIPELINE (Your existing AI logic)
+        #  4. CORE PIPELINE (Pass history)
         # =====================================================
-        result = ask_pipeline(query, params=params)
+        # Pass chat_history to the pipeline
+        result = ask_pipeline(query, params=params, chat_history=chat_history)
         
-        # Add original query and updated chat_id to response
         result["query"] = query
-        result["chat_id"] = chat_id # Return this so frontend can update state
+        result["chat_id"] = chat_id 
 
-        # =====================================================
-        #  4. DATABASE: SAVE BOT RESPONSE
-        # =====================================================
+        # 5. DATABASE: SAVE BOT RESPONSE
         if supabase and chat_id:
             try:
-                # Determine the content to save (the answer string)
                 bot_content = result.get("answer", "")
-                
                 supabase.table("messages").insert({
                     "chat_id": chat_id,
                     "role": "assistant",

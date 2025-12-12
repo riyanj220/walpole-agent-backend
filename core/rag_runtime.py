@@ -15,7 +15,6 @@ GROQ_API_KEY = config("GROQ_API_KEY", default=None)
 MODEL_NAME = "llama-3.1-8b-instant" 
 EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
 
-
 #  Supabase Configuration
 SUPABASE_URL = config("SUPABASE_URL", default=None)
 # Use SERVICE_KEY for backend to have admin rights (bypass RLS if needed)
@@ -28,7 +27,7 @@ if SUPABASE_URL and SUPABASE_KEY:
         print("[INIT] Supabase client initialized successfully.")
     except Exception as e:
         print(f"[INIT ERROR] Could not initialize Supabase: {e}")
-        
+
 # =====================================================
 #  Vector Store Loader
 # =====================================================
@@ -67,6 +66,9 @@ else:
 final_prompt = ChatPromptTemplate.from_template("""
 You are a probability and statistics tutor helping a student understand textbook content.
 
+CHAT HISTORY:
+{chat_history}
+
 STRICT GUIDELINES:
 1. Base your answer ONLY on the context provided below.
 2. If the context contains the exercise/answer/example, present it clearly and rewrite messy formulas into clean notation.
@@ -95,10 +97,14 @@ YOUR ANSWER (based strictly on the context above):
 #  RAG Execution (Core)
 # =====================================================
 
-def run_rag(query: str, docs: list):
+def run_rag(query: str, docs: list , chat_history: list =[]):
     """Run the RAG pipeline: combine context, prompt LLM."""
     if not docs:
         return "No relevant content found in the textbook for your query."
+
+    history_str = ""
+    if chat_history:
+        history_str = "\n".join([f"{role.title()}: {msg}" for role, msg in chat_history])
 
     # Combine context with source info
     context_parts = []
@@ -113,11 +119,16 @@ def run_rag(query: str, docs: list):
     
     try:
         chain = (
-            {"context": lambda _: context, "question": RunnablePassthrough()}
+            {
+                "context": lambda _: context, 
+                "question": RunnablePassthrough(),
+                "chat_history": lambda _: history_str
+            }
             | final_prompt
             | llm
             | StrOutputParser()
         )
+
         response = chain.invoke(query)
         print(f"[RAG] Generated response length: {len(response)} chars")
         return response
@@ -126,11 +137,15 @@ def run_rag(query: str, docs: list):
         return f"Error generating response: {str(e)}"
 
 
-def run_general_chat(query: str):
+def run_general_chat(query: str, chat_history: list =[]):
     """
     Handle casual conversation, study tips, and emotional support.
     Does NOT use the vector database.
     """
+    history_str = ""
+    if chat_history:
+        history_str = "\n".join([f"{role.title()}: {msg}" for role, msg in chat_history])
+
     # A specific prompt for being a friendly companion
     general_prompt = ChatPromptTemplate.from_template("""
     You are 'Stats Advisor', a cheerful, empathetic, and encouraging study companion for a Probability & Statistics student.
@@ -140,6 +155,9 @@ def run_general_chat(query: str):
     - You understand that statistics can be hard and stressful.
     - You offer good general study advice (like taking breaks, practicing problems).
     
+    - CHAT HISTORY:
+    {chat_history}
+                                                      
     YOUR TASK:
     - Reply to the student's casual comment or question.
     - If they are stressed, validate their feelings and offer encouragement.
@@ -154,8 +172,9 @@ def run_general_chat(query: str):
 
     try:
         chain = general_prompt | llm | StrOutputParser()
-        response = chain.invoke({"question": query})
+        response = chain.invoke({"question": query, "chat_history":history_str})
         return response
+    
     except Exception as e:
         print(f"[GENERAL CHAT ERROR] {str(e)}")
         return "I'm here to help you study! Let's take a deep breath and tackle some statistics."

@@ -54,26 +54,14 @@ def get_chat_history(chat_id, limit=6):
 
 @api_view(["POST"])
 def ask(request):
-    """
-    Main query endpoint - Ask a question to the RAG system.
-    
-    POST body:
-    {
-        "query": "What is exercise 6.14?",
-        "user_id": "uuid-from-frontend",    # <--- NEW
-        "chat_id": "uuid-or-null",          # <--- NEW
-        "params": {
-            "chapter": 6, 
-            "mode": "agent", 
-            "max_results": 5
-        }
-    }
-    """
     try:
         payload = request.data or {}
         query = payload.get("query", "").strip()
         user_id = payload.get("user_id") # Get user_id from frontend
         chat_id = payload.get("chat_id") # Get chat_id from frontend (if active)
+        
+        frontend_history = payload.get("chat_history", [])
+
         params = payload.get("params", {})
 
         if not query:
@@ -124,12 +112,18 @@ def ask(request):
         #  3. FETCH HISTORY FOR CONTEXT
         # =====================================================
         chat_history = []
+        
         if chat_id:
+            # SCENARIO A: Logged In (Fetch from DB)
             chat_history = get_chat_history(chat_id, limit=6)
-            
-            # Remove the very last message if it matches our current query (since we just inserted it)
+            # Remove duplicate if it matches current query
             if chat_history and chat_history[-1][1] == query:
                 chat_history.pop()
+        
+        elif frontend_history:
+            # SCENARIO B: Guest (Use history sent from Frontend)
+            # frontend_history is expected to be [[role, content], [role, content]]
+            chat_history = frontend_history
 
         # =====================================================
         #  4. CORE PIPELINE (Pass history)

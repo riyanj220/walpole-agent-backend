@@ -73,27 +73,51 @@ def ask(request):
         logger.info(f"Processing query: {query[:100]} | User: {user_id} | Chat: {chat_id}")
         
         # =====================================================
-        #  1. DATABASE: HANDLE CHAT SESSION
+        #  1. DATABASE: HANDLE CHAT SESSION + AUTO-CLEANUP
         # =====================================================
-        # If we have a user but no chat_id, this is a NEW conversation.
         if supabase and user_id and not chat_id:
             try:
-                # Generate a simple title from the first few words
                 title = " ".join(query.split()[:5]) + "..."
-                
-                # Insert new chat row
                 chat_data = supabase.table("chats").insert({
                     "user_id": user_id,
                     "title": title
                 }).execute()
                 
-                # Grab the new ID
                 if chat_data.data:
                     chat_id = chat_data.data[0]['id']
                     logger.info(f"Created new chat session: {chat_id}")
+
+                    # ---------------------------------------------------------
+                    # Auto-Delete Old Chats (Limit to 20)
+                    # ---------------------------------------------------------
+                    try:
+                        # 1. Get all user chats sorted by NEWEST first
+                        user_chats = supabase.table("chats")\
+                            .select("id")\
+                            .eq("user_id", user_id)\
+                            .order("created_at", desc=True)\
+                            .execute()
+                        
+                        # 2. If we have more than 20 chats...
+                        if user_chats.data and len(user_chats.data) > 20:
+                            # 3. Identify the extra ones (everything after index 20)
+                            # These are the oldest because we sorted by desc=True
+                            old_chats_to_delete = [c['id'] for c in user_chats.data[20:]]
+                            
+                            if old_chats_to_delete:
+                                # 4. Delete them
+                                supabase.table("chats")\
+                                    .delete()\
+                                    .in_("id", old_chats_to_delete)\
+                                    .execute()
+                                logger.info(f"Cleaned up {len(old_chats_to_delete)} old chats for user {user_id}")
+                    except Exception as cleanup_error:
+                        # Don't fail the request if cleanup fails, just log it
+                        logger.error(f"Chat cleanup failed: {cleanup_error}")
+                    # ---------------------------------------------------------
+
             except Exception as e:
                 logger.error(f"Failed to create chat session: {e}")
-                # We continue anyway, just without saving history
         
         # =====================================================
         #  2. DATABASE: SAVE USER MESSAGE

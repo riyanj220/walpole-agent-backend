@@ -6,11 +6,32 @@ Uses an LLM Router to intelligently distinguish between:
 3. Agent Reasoning (Complex comparisons, multi-step logic)
 """
 
+import os
+from decouple import config
+
+# LangChain ONLY looks for the "LANGCHAIN_" prefix in os.environ
+os.environ["LANGCHAIN_TRACING_V2"] = config("LANGSMITH_TRACING_V2", default="false")
+os.environ["LANGCHAIN_ENDPOINT"] = config("LANGSMITH_ENDPOINT", default="https://api.smith.langchain.com")
+os.environ["LANGCHAIN_API_KEY"] = config("LANGSMITH_API_KEY", default="")
+os.environ["LANGCHAIN_PROJECT"] = config("LANGSMITH_PROJECT", default="pr-indelible-lever-37")
+
 from .rag_agent import ask_agent, ask_direct
 from .rag_runtime import run_general_chat, llm
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 import re
+from langsmith import traceable
+from langsmith import Client
+
+client = Client()
+
+try:
+    if not client.has_project(project_name="pr-indelible-lever-37"):
+        client.create_project(project_name="pr-indelible-lever-37")
+        print("Successfully created LangSmith project.")
+except Exception as e:
+    print(f"Project check failed: {e}")
+
 
 def semantic_router(query: str, chat_history: list=[]) -> str:
     """
@@ -93,7 +114,7 @@ def fallback_regex_router(query: str) -> str:
         
     return 'direct'
 
-
+@traceable(project_name="pr-indelible-lever-37")
 def ask_pipeline(query: str, params: dict = None, chat_history: list = []) -> dict:
     """
     Main pipeline entry point.

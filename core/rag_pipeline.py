@@ -9,11 +9,11 @@ Uses an LLM Router to intelligently distinguish between:
 import os
 from decouple import config
 
-# LangChain ONLY looks for the "LANGCHAIN_" prefix in os.environ
 os.environ["LANGCHAIN_TRACING_V2"] = config("LANGSMITH_TRACING_V2", default="false")
-os.environ["LANGCHAIN_ENDPOINT"] = config("LANGSMITH_ENDPOINT", default="https://api.smith.langchain.com")
-os.environ["LANGCHAIN_API_KEY"] = config("LANGSMITH_API_KEY", default="")
-os.environ["LANGCHAIN_PROJECT"] = config("LANGSMITH_PROJECT", default="pr-indelible-lever-37")
+os.environ["LANGCHAIN_ENDPOINT"] = config("LANGSMITH_ENDPOINT", default="https://eu.api.smith.langchain.com")
+os.environ["LANGCHAIN_API_KEY"] = config("LANGSMITH_API_KEY")
+os.environ["LANGCHAIN_PROJECT"] = config("LANGSMITH_PROJECT", default="pr-brief-electrocardiogram-6")
+
 
 from .rag_agent import ask_agent, ask_direct
 from .rag_runtime import run_general_chat, llm
@@ -26,8 +26,8 @@ from langsmith import Client
 client = Client()
 
 try:
-    if not client.has_project(project_name="pr-indelible-lever-37"):
-        client.create_project(project_name="pr-indelible-lever-37")
+    if not client.has_project(project_name="pr-brief-electrocardiogram-6"):
+        client.create_project(project_name="pr-brief-electrocardiogram-6")
         print("Successfully created LangSmith project.")
 except Exception as e:
     print(f"Project check failed: {e}")
@@ -55,14 +55,14 @@ def semantic_router(query: str, chat_history: list=[]) -> str:
            - General study advice ("how should I study?")
            - Anything NOT related to specific probability/statistics content.
            - BUT: If the user is asking to explain the previous answer, it is NOT general.
-           - IMPORTANT: If the user asks for "an example", "more details", "why", or "how", it is NOT general.                                        
+           - IMPORTANT: If the user asks for "an example", "more details", "why", or "how", it is NOT general.                                                            
 
         2. "direct":
            - Questions asking for specific exercises ("exercise 6.9", "6.14")
            - Questions asking for answers ("answer to 2.3")
            - "How to solve" specific problems.
            - Simple definitions ("what is variance?", "define mean")
-           - Follow-up questions asking to elaborate on the previous math topic.                                              
+           - Follow-up questions asking to elaborate on the previous math topic.                                                                    
 
         3. "agent":
            - Complex questions requiring reasoning.
@@ -70,11 +70,16 @@ def semantic_router(query: str, chat_history: list=[]) -> str:
            - Relationships ("how does sample size affect error?")
         
         CONTEXT FROM HISTORY: {context_str}
-                                                         
+                                                                  
         USER INPUT: "{query}"
         
         Return a JSON object with a single key "route".
         Example: {{"route": "general"}}
+
+        STRICT INSTRUCTIONS:
+        - Do NOT output any Python code or explanations.
+        - Do NOT output markdown ticks (```json).
+        - Output ONLY the raw JSON object.
         """)
 
         # Create chain: Prompt -> LLM -> JSON Parser
@@ -114,7 +119,7 @@ def fallback_regex_router(query: str) -> str:
         
     return 'direct'
 
-@traceable(project_name="pr-indelible-lever-37")
+@traceable(project_name="pr-brief-electrocardiogram-6")
 def ask_pipeline(query: str, params: dict = None, chat_history: list = []) -> dict:
     """
     Main pipeline entry point.

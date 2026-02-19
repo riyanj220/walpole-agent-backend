@@ -34,4 +34,4 @@ EXPOSE 8000
 # 7. Run the Application
 # START THE PRODUCTION SERVER (Gunicorn)
 # !!! IMPORTANT: Replace 'your_project_name' with your actual project name (the one with wsgi.py)
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "backend.wsgi:application"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8000","--timeout","120", "backend.wsgi:application"]

@@ -1,55 +1,63 @@
-# This is the name of your new automated workflow
-name: Deploy to DigitalOcean Droplet
+# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
+# More GitHub Actions for Azure: https://github.com/Azure/actions
 
-# This tells GitHub WHEN to run this automation.
-# We'll run it on every push to the "main" branch.
+name: Build and deploy container app to Azure Web App - walpole-agent
+
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
-# This defines the "job" that will run.
 jobs:
-  deploy:
-    # This job will run on a fresh, temporary Ubuntu server
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read #This is required for actions/checkout
 
     steps:
-      # Step 1: Check out your code
-      # This pulls your new code (that you just pushed) onto the temporary server
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # Step 2: SSH into your server and run the deployment commands
-      # This is the "magic" part. It uses a pre-made Action.
-      - name: SSH and Deploy
-        uses: appleboy/ssh-action@master
+      - uses: actions/checkout@v4
         with:
-          # These pull the secrets we just saved in Step 1
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USERNAME }}
-          password: ${{ secrets.DEPLOY_PASSWORD }}
+          lfs: true
 
-          script: |
-            cd ~/walpole-agent-backend
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
-            # Pull latest code
-            git fetch --all
-            git reset --hard origin/main
+      - name: Log in to container registry
+        uses: docker/login-action@v2
+        with:
+          registry: walpole.azurecr.io/
+          username: ${{ secrets.AZUREAPPSERVICE_CONTAINERUSERNAME_24B7002DFF164FEC94CA73C4E0A7F881 }}
+          password: ${{ secrets.AZUREAPPSERVICE_CONTAINERPASSWORD_AA97E2D3F06F45569CD90086D047F3E9 }}
 
-            git lfs pull
+      - name: Build and push container image to registry
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: true
+          tags: walpole.azurecr.io/${{ secrets.AZUREAPPSERVICE_CONTAINERUSERNAME_24B7002DFF164FEC94CA73C4E0A7F881 }}/walpole-backend:${{ github.sha }}
+          file: ./Dockerfile
 
-            git clean -fdx -e core/data/
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write #This is required for requesting the JWT
+      contents: read #This is required for actions/checkout
 
-            # Create the .env file from our GitHub Secret
-            echo "${{ secrets.DOT_ENV }}" > .env
+    needs: build
 
-            docker-compose down -v --remove-orphans
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_D63FD77060D848C3BC79434ACF0FFFA6 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_255233B91740428FB3CF82B79A1762B2 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_DF10EC8E0B2740FF995D618EA6E80408 }}
 
-            docker-compose build
-
-            # 3. Start fresh containers
-            # This will use the newly built images
-            docker-compose up -d
-
-            docker image prune -f
+      - name: Deploy to Azure Web App
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: "walpole-agent"
+          slot-name: "Production"
+          images: "walpole.azurecr.io/${{ secrets.AZUREAPPSERVICE_CONTAINERUSERNAME_24B7002DFF164FEC94CA73C4E0A7F881 }}/walpole-backend:${{ github.sha }}"

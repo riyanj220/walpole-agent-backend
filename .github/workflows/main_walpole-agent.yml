@@ -17,6 +17,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
@@ -43,9 +45,8 @@ jobs:
       contents: read #This is required for actions/checkout
 
     needs: build
-    
+
     steps:
-      
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -57,7 +58,6 @@ jobs:
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v2
         with:
-          app-name: 'walpole-agent'
-          slot-name: 'Production'
-          images: 'walpole.azurecr.io/${{ secrets.AZUREAPPSERVICE_CONTAINERUSERNAME_24B7002DFF164FEC94CA73C4E0A7F881 }}/walpole-backend:${{ github.sha }}'
-          
+          app-name: "walpole-agent"
+          slot-name: "Production"
+          images: "walpole.azurecr.io/${{ secrets.AZUREAPPSERVICE_CONTAINERUSERNAME_24B7002DFF164FEC94CA73C4E0A7F881 }}/walpole-backend:${{ github.sha }}"

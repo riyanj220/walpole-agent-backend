@@ -27,7 +27,7 @@ def keep_alive():
     
     # 3. DELETE old records to keep the table empty
     # requests.delete: Cleans up the table so you stay within your free-tier storage limits.
-    # requests.delete(f"{URL}/rest/v1/ping?id=gt.0", headers=headers)
+    requests.delete(f"{URL}/rest/v1/ping?id=gt.0", headers=headers)
 
     if res_insert.status_code in [200, 201]:
         print(f"Successfully pinged Supabase at {datetime.now()}")

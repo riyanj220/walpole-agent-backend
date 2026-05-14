@@ -1,7 +1,6 @@
 import os
 import requests
 from datetime import datetime
-
 # Using your exact environment variable names
 # os.getenv: Retrieves the value of a specific environment variable from the system.
 URL = os.getenv("SUPABASE_URL")
@@ -20,15 +19,15 @@ def keep_alive():
 
     # 1. INSERT a record to the 'pings' table
     # requests.post: Sends an HTTP POST request to your Supabase REST API to create a record.
-    res_insert = requests.post(f"{URL}/rest/v1/pings", headers=headers, json={"created_at": "now()"})
+    res_insert = requests.post(f"{URL}/rest/v1/ping", headers=headers, json={"created_at": "now()"})
     
     # 2. SELECT to verify activity
     # requests.get: Fetches data from the table to simulate real user read activity.
-    requests.get(f"{URL}/rest/v1/pings?limit=1", headers=headers)
+    requests.get(f"{URL}/rest/v1/ping?limit=1", headers=headers)
     
     # 3. DELETE old records to keep the table empty
     # requests.delete: Cleans up the table so you stay within your free-tier storage limits.
-    # requests.delete(f"{URL}/rest/v1/pings?id=gt.0", headers=headers)
+    # requests.delete(f"{URL}/rest/v1/ping?id=gt.0", headers=headers)
 
     if res_insert.status_code in [200, 201]:
         print(f"Successfully pinged Supabase at {datetime.now()}")

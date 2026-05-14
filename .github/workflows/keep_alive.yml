@@ -1,0 +1,29 @@
+name: Supabase Keep Alive
+
+on:
+  schedule:
+    - cron: "0 0 */3 * *" # Runs every 3 days
+  workflow_dispatch: # Allows you to click 'Run workflow' manually to test it
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        # pip install: Installs the requests library needed for the API calls.
+        run: pip install requests
+
+      - name: Run keep alive script
+        env:
+          # These must match the names you saved in GitHub Repo Settings > Secrets
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python supabase_keep_alive.py
